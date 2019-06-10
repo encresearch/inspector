@@ -3,6 +3,17 @@ import datetime
 import time
 import json
 
+#Testing Data
+today= str(datetime.datetime.now().strftime("%m-%d-%y %H:%M"))
+
+inspectorPackageDict = {
+                    'topic': 'gas_sensor',
+                    'location': 'NA-EAST',
+                    'time_init': today,
+                    'time_duration': 12
+                    }
+inspectorPackageJSON = json.dumps(inspectorPackageDict)
+
 #Setup in env variable?
 broker = "iot.eclipse.org"
 port = 1883
@@ -12,8 +23,7 @@ def on_message(client, userdata, msg):
     topic = msg.topic
     m_decode = str(msg.payload.decode("utf-8", "ignore"))
     m_in = json.loads(m_decode)
-
-    print(m_in)
+    print("\n",m_in,"\n")
 
 def on_log(client, userdata, level, buf):
     import time
@@ -35,12 +45,14 @@ client.on_message = on_message
 client.on_disconnect = on_disconnect
 client.connect(host=broker, keepalive=keepalive, port=port)
 time.sleep(.5)
-client.subscribe(topic, qos=1)
-time.sleep(.5)
+
+
+
 
 client.loop_start()
-
-
+client.subscribe(topic, qos=1)
+time.sleep(.5)
+client.publish(topic, inspectorPackageJSON)
 
 testIndex = 0
 
