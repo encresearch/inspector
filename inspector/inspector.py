@@ -10,6 +10,27 @@ KEEPALIVE = 60
 topic = "data/anomaly"
 client_id = "/Inspector"
 
+"""
+Test Data Reading Functions
+"""
+
+def gas_sensor_test(timeSinceStart):
+    """ Reads values > 0 every 5 seconds for an interval of 5 seconds"""
+    return math.sin(2*math.pi*timeSinceStart/10)
+
+def current_sensor_test(timeSinceStart):
+    """ Reads values > 0 every 10 seconds, starting at 5.7 seconds"""
+    return math.sin((math.pi/10)*(timeSinceStart - 5.7))
+
+def magnetometer_sensor_test(timeSinceStart):
+    """ Reads values > 0 every 5 seconds for an interval of 5 seconds"""
+    return 10*((1/3)*math.sin(timeSinceStart/3) + 2*math.cos(timeSinceStart/3)*(math.sin(timeSinceStart/3)**2))
+
+NUM_SENSORS = 3
+LOCATIONS = ["HAITI/SOUTH", "HAITI/NORTH", "USA/CA/SOUTH", "USA/CA/NORTH"]
+
+
+
 
 
 def createJSON(topic, location, time_init, time_duration):
@@ -41,21 +62,40 @@ def main():
 
     def on_publish(client, userdata, result):
         # Function for clients's specific callback when pubslishing message
-        print("Published")
+        print(f"Publish #{result} Complete")
         pass
 
     client, connection = connect_to_broker(client_id=client_id, host=HOST, port=PORT, keepalive=KEEPALIVE, on_connect=on_connect, on_publish=on_publish)
 
     client.loop_start()
 
-    dataExaminer = examineData()
+    dataExaminers = {}
+
+    for location in LOCATIONS:
+        temp = []
+        temp.append(examineData('gas_sensor', location, gas_sensor_test))
+        temp.append(examineData('current_sensor', location, current_sensor_test))
+        temp.append(examineData('magnetometer_sensor', location, magnetometer_sensor_test))
+
+        dataExaminers[location] = temp
+
+
+
+    packagesToSend = []
 
     while True:
 
-        packageToSend = next(dataExaminer)
-        if packageToSend != None:
-            print(packageToSend)
-            client.publish(topic, packageToSend)
+        for location in LOCATIONS:
+            for dataExaminer in dataExaminers[location]:
+                packagesToSend.append(next(dataExaminer))
+
+        for package in packagesToSend:
+            if package != None:
+                #print(package)
+                client.publish(topic, package)
+
+        for index in range(len(packagesToSend)):
+            packagesToSend.pop()
 
     client.loop_stop()
 
@@ -63,7 +103,7 @@ def main():
 
 
 
-def examineData():
+def examineData(topic, location, dataFunction):
 
     initialTime = time.time()
     dataThreshold = 0
@@ -71,13 +111,15 @@ def examineData():
     detectedTime = 0
     endTime = 0
 
+
     while True:
 
         dt = time.time()-initialTime
         #value = 5 * math.sin(dt)
         #value = 7 * math.sin(math.cos(dt)*dt/4)
-        period = 10
-        value = math.sin(2*math.pi*dt/period)
+        #period = 10
+        #value = math.sin(2*math.pi*dt/period)
+        value = dataFunction(dt)
         #print(value)
 
         if value > dataThreshold:
@@ -88,7 +130,7 @@ def examineData():
             if thresholdBroken == True:
                 thresholdBroken = False
                 endTime = time.time()
-                inspectorPackageJSON = createJSON('gas_sensor', 'How to do location?', detectedTime-initialTime, endTime-detectedTime)
+                inspectorPackageJSON = createJSON(topic, location, detectedTime-initialTime, endTime-detectedTime)
 
                 yield inspectorPackageJSON
         yield None
