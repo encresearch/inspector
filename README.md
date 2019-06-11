@@ -1,4 +1,4 @@
-# INSPECTOR - Earthquake Precursors Alerting Framework
+# INSPECTOR - Earthquake Precursors Anomaly Detection Framework
 
 Python application that constantly scans data and detects breaking of thresholds values and sends an alert as an email.
 
