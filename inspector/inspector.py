@@ -34,11 +34,12 @@ def magnetometer_sensor_test(timeSinceStart):
 LOCATIONS = ["USA/Quincy/1",]
 
 
-def createJSON(topic, location, time_init, time_duration):
+def createJSON(topic, anomaly_status, location, time_init, time_duration):
     ''' Helper function to quickly create a JSON String
     with the following format'''
     return json.dumps({
             'topic': topic,
+            'anomaly_status': anomaly_status,
             'location': location,
             'time_init': time_init,
             'time_duration': time_duration
@@ -83,8 +84,8 @@ def main():
     for location in LOCATIONS:
         temp = []
         temp.append(examineData('gas_sensor', location, gas_sensor_test))
-        temp.append(examineData('current_sensor', location, current_sensor_test))
-        temp.append(examineData('magnetometer_sensor', location, magnetometer_sensor_test))
+        #temp.append(examineData('current_sensor', location, current_sensor_test))
+        #temp.append(examineData('magnetometer_sensor', location, magnetometer_sensor_test))
 
         dataExaminers[location] = temp
 
@@ -151,15 +152,19 @@ def examineData(topic, location, dataFunction):
                 thresholdBroken = True
                 detectedTime = time.time()
                 detectedTimeStamp = str(datetime.datetime.now().strftime("%m-%d-%y %H:%M:%S.%f"))
+                inspectorPackageJSON = createJSON(topic, "detected", location, detectedTimeStamp, 0)
+                yield inspectorPackageJSON
+                continue
         #If the value of data is within normal range
         else:
             #If the previous data analyzed was part of an anomaly --> Anomaly over
             if thresholdBroken == True:
                 thresholdBroken = False
                 endTime = time.time()
-                inspectorPackageJSON = createJSON(topic, location, detectedTimeStamp, endTime-detectedTime)
+                inspectorPackageJSON = createJSON(topic, "finished", location, detectedTimeStamp, endTime-detectedTime)
                 #yield the JSON package after the anomaly
                 yield inspectorPackageJSON
+                continue
         #If there is no anomaly to report, yield None, and return to the loop
         yield None
 
