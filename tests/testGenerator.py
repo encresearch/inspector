@@ -11,7 +11,7 @@ a = testGenerator()
 while True:
     print(next(a))
     input()
-"""
+
 
 sensorDict = {}
 locs = ['a', 'b', 'c']
@@ -25,3 +25,16 @@ for loc in locs:
     sensorDict[loc] = temp
 
 print (sensorDict)
+"""
+inspectorPackageDict = {
+        'topic': 'gas_sensor',
+        'location': 'USA/Quincy/1',
+        'time_init': '10:31.123',
+        'time_duration': 12.234
+       }
+print(inspectorPackageDict)
+
+
+
+
+print(messageToSend)

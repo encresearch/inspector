@@ -7,7 +7,7 @@ import json
 HOST = "iot.eclipse.org"
 PORT = 1883
 KEEPALIVE = 60
-topic = "data/anomaly"
+topic =  "data/anomalyDetected"
 client_id = "/Inspector"
 
 """
@@ -73,7 +73,7 @@ def main():
 
     for location in LOCATIONS:
         temp = []
-        #temp.append(examineData('gas_sensor', location, gas_sensor_test))
+        temp.append(examineData('gas_sensor', location, gas_sensor_test))
         temp.append(examineData('current_sensor', location, current_sensor_test))
         #temp.append(examineData('magnetometer_sensor', location, magnetometer_sensor_test))
 
