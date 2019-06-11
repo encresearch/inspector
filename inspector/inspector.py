@@ -27,8 +27,8 @@ def magnetometer_sensor_test(timeSinceStart):
     return 10*((1/3)*math.sin(timeSinceStart/3) + 2*math.cos(timeSinceStart/3)*(math.sin(timeSinceStart/3)**2))
 
 NUM_SENSORS = 3
-LOCATIONS = ["HAITI/SOUTH", "HAITI/NORTH", "USA/CA/SOUTH", "USA/CA/NORTH"]
-
+#LOCATIONS = ["HAITI/SOUTH", "HAITI/NORTH", "USA/CA/SOUTH", "USA/CA/NORTH"]
+LOCATIONS = ["USA/Quincy/1",]
 
 
 
@@ -73,9 +73,9 @@ def main():
 
     for location in LOCATIONS:
         temp = []
-        temp.append(examineData('gas_sensor', location, gas_sensor_test))
+        #temp.append(examineData('gas_sensor', location, gas_sensor_test))
         temp.append(examineData('current_sensor', location, current_sensor_test))
-        temp.append(examineData('magnetometer_sensor', location, magnetometer_sensor_test))
+        #temp.append(examineData('magnetometer_sensor', location, magnetometer_sensor_test))
 
         dataExaminers[location] = temp
 
@@ -109,6 +109,7 @@ def examineData(topic, location, dataFunction):
     dataThreshold = 0
     thresholdBroken = False
     detectedTime = 0
+    detectedTimeStamp = ""
     endTime = 0
 
 
@@ -126,11 +127,12 @@ def examineData(topic, location, dataFunction):
             if thresholdBroken == False:
                 thresholdBroken = True
                 detectedTime = time.time()
+                detectedTimeStamp = str(datetime.datetime.now().strftime("%m-%d-%y %H:%M:%S.%f"))
         else:
             if thresholdBroken == True:
                 thresholdBroken = False
                 endTime = time.time()
-                inspectorPackageJSON = createJSON(topic, location, detectedTime-initialTime, endTime-detectedTime)
+                inspectorPackageJSON = createJSON(topic, location, detectedTimeStamp, endTime-detectedTime)
 
                 yield inspectorPackageJSON
         yield None

@@ -38,7 +38,7 @@ def on_disconnect(client, userdata, rc):
     print("Client Disconnected")
 
 topic = "data/anomaly"
-client = mqtt.Client("notiferTestENC")
+client = mqtt.Client("/Notifier")
 client.on_connect = on_connect
 client.on_log = on_log
 client.on_message = on_message
@@ -59,8 +59,5 @@ testIndex = 0
 
 while True:
     time.sleep(1)
-    if testIndex > 15:
-        break
-    testIndex+= 1
 client.loop_stop()
 client.disconnect()
