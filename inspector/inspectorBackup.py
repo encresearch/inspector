@@ -3,9 +3,7 @@ import datetime
 import time
 import math
 import json
-from influxdb import InfluxDBClient
-from DataExaminer import DataExaminer
-
+from influxdb import DataFrameClient
 
 #Declaring Global Variables
 HOST = "iot.eclipse.org"
@@ -14,44 +12,45 @@ KEEPALIVE = 60
 
 #MQTT Topic to communicate with Notifier
 topic =  "data/anomalyDetected"
-calculatorCommsTopic = "communication/influxdbConverted"
 #MQTT Client ID to remain unique
 client_id = "/Inspector"
 
 
-db_host = 'localhost'#'influxdb' #'localhost'
-db_port = 8086
-db_username = 'root'
-db_password = 'root'
-database = 'testing'
 
-thresholdValue = [10]
+#Test Data Reading Functions
+def gas_sensor_test(timeSinceStart):
+    """ Reads values > 0 every 5 seconds for an interval of 5 seconds"""
+    return math.sin(2*math.pi*timeSinceStart/10)
 
+def current_sensor_test(timeSinceStart):
+    """ Reads values > 0 every 10 seconds, starting at 5.7 seconds"""
+    return math.sin((math.pi/10)*(timeSinceStart - 5.7))
 
+def magnetometer_sensor_test(timeSinceStart):
+    """ Reads values > 0 every 5 seconds for an interval of 5 seconds"""
+    return 10*((1/3)*math.sin(timeSinceStart/3) + 2*math.cos(timeSinceStart/3)*(math.sin(timeSinceStart/3)**2))
 
-
-def wait_for_influxdb(db_client):
-    """Function to wait for the influxdb service to be available"""
-    try:
-        db_client.ping()
-        print("connected to db")
-        return None
-    except:
-        print("not yet")
-        time.sleep(1)
-        wait_for_influxdb(db_client)
+#Location array, for each location, the program will initialize dataExaminers
+#LOCATIONS = ["HAITI/SOUTH", "HAITI/NORTH", "USA/CA/SOUTH", "USA/CA/NORTH"]
+LOCATIONS = ["USA/Quincy/1",]
 
 
+def createJSON(topic, anomaly_status, location, time_init, time_duration):
+    ''' Helper function to quickly create a JSON String
+    with the following format'''
+    return json.dumps({
+            'topic': topic,
+            'anomaly_status': anomaly_status,
+            'location': location,
+            'time_init': time_init,
+            'time_duration': time_duration
+           })
 
-
-
-
-def connect_to_broker(client_id, host, port, keepalive, on_connect, on_message, on_publish):
+def connect_to_broker(client_id, host, port, keepalive, on_connect, on_publish):
     ''' Params -> Client(client_id=””, clean_session=True, userdata=None, protocol=MQTTv311, transport=”tcp”)
     We set clean_session False, so in case connection is lost, it'll reconnect with same ID '''
     client = mqtt.Client(client_id=client_id, clean_session=False)
     client.on_connect = on_connect
-    client.on_message = on_message
     client.on_publish = on_publish
     connection = client.connect(host, port, keepalive)
     return (client, connection)
@@ -61,15 +60,9 @@ def main():
     ''' Main Function houses the main mqtt loop, where the dataExaminers look for
     anomalies, and report them to notifier when a threshold is broken '''
 
-    db_client = InfluxDBClient(host=db_host, port=db_port, username=db_username, password=db_password, database=database)
-    # waits for influxdb service to be active
-    wait_for_influxdb(db_client=db_client)
-
-
     def on_connect(client, userdata, flags, rc):
         if rc==0:
             print(f"Connected OK: {client}")
-            client.subscribe(calculatorCommsTopic, 2)
         else:
             print(f"Bad Connection Returned (Code: {rc})")
         pass
@@ -79,69 +72,50 @@ def main():
         print(f"Publish #{result} Complete")
         pass
 
-
-    def on_message(client, userdata, message):
-        # Function for clients's specific callback when pubslishing message
-        payload = message.payload.decode()
-        print("Message Received")
-        #print(payload)
-        #print()
-        try:
-            location, convertedDataIndexes = json.loads(payload)
-            #print("ConvertedDataIndexes: " + str(convertedDataIndexes))
-            for dataPackage in convertedDataIndexes:
-                #print(1)
-                #print(dataPackage)
-
-                measurement = location + '_' + dataPackage['sensorName']
-                numberOfReadings = dataPackage['amountOfNewData']
-
-                print(measurement)
-
-                currentExaminer = None
-                #print(2)
-
-                query_to_execute = f'select * from "{measurement}" group by * order by DESC limit {numberOfReadings}'
-
-                results = db_client.query(query_to_execute).raw['series']
-                data = results[0]['values']
-
-
-                print(str(data[0]) +" " + str(dataPackage['adc']) +" "+ str(dataPackage['channel']))
-
-
-                print("Queried")
-
-                if measurement in DataExaminer.dataExaminers:
-                    #print("if1")
-                    currentExaminer = DataExaminer.dataExaminersAccess[measurement]
-                else:
-                    #print("if2")
-                    currentExaminer = DataExaminer(dataPackage['sensorName'], location, thresholdValue)
-                    #print("endif2")
-                #print("examiners")
-
-                anomalies = currentExaminer.examineData(data)
-
-                print("Examined")
-
-
-                if len(anomalies) > 0:
-                    for anomaly in anomalies:
-                        print(str(anomaly))
-                        client.publish("data/anomalyDetected", anomaly)
-        except Exception as e:
-            print(e)
-            raise FlowException("Process Exception", e)
-
     #Establish Connection to the MQTT Broker
-    client, connection = connect_to_broker(client_id=client_id, host=HOST, port=PORT, keepalive=KEEPALIVE, on_connect=on_connect, on_message=on_message, on_publish=on_publish)
+    client, connection = connect_to_broker(client_id=client_id, host=HOST, port=PORT, keepalive=KEEPALIVE, on_connect=on_connect, on_publish=on_publish)
 
     #Begin the connection loop, where within the loop, messages can be sent
-    client.loop_forever()
-    #client.disconnect()
+    client.loop_start()
+
+    #Initializing empty dictionary to hold all the dataExaminers based on location/Sensor
+    dataExaminers = {}
+
+    #Populating the DataExaminers dictionary
+    for location in LOCATIONS:
+        temp = []
+        temp.append(examineData('gas_sensor', location, gas_sensor_test))
+        #temp.append(examineData('current_sensor', location, current_sensor_test))
+        #temp.append(examineData('magnetometer_sensor', location, magnetometer_sensor_test))
+
+        dataExaminers[location] = temp
 
 
+    #Initializing array to hold JSON packages tbat will be sent
+    packagesToSend = []
+
+    #Infinte Loop to constantly inspect Data
+    while True:
+
+        #Inspect realtime data
+        for location in LOCATIONS:
+            for dataExaminer in dataExaminers[location]:
+                packagesToSend.append(next(dataExaminer))
+
+        #Publish data that contains anomlies
+        for package in packagesToSend:
+            if package != None:
+                #print(package)
+                client.publish(topic, package)
+
+        #Remove all JSON Packages from the array for the next time in the loop
+        for index in range(len(packagesToSend)):
+            packagesToSend.pop()
+
+
+    #Stop the loop/Disconnect
+    client.loop_stop()
+    client.disconnect()
 
 
 
