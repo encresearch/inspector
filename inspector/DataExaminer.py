@@ -77,23 +77,37 @@ class DataExaminer():
         return value < self.lowerThreshold or value > self.higherThreshold
 
     def examineData(self, dataArray):
+        d = self.measurementName == "usa/quincy/1_Sensor Name_Test"
         anomalies = []
+        if d:
+            print(f"ExamineData() {self.measurementName}")
+
+        dataArray = dataArray[::-1]
         for data in dataArray:
             timestamp, value = data
-
+            if d:
+                print(f"{self.measurementName} Value: {value}")
             if self.anomalyFunction(value):
+                if d:
+                    print("Anomaly Function True")
                 if self.thresholdBroken == False:
+                    if d:
+                        print(f"Anomaly Detected {self.measurementName}")
                     self.thresholdBroken = True
                     self.influxTimeStamp_start = timestamp
                     #2019-07-18T11:33:02.155326976Z
                     #self.anomalyDetectedTime = DateTime.strftime(string,"%Y-%m-%DT%H:%M:$S.")
                     self.anomalyDetectedTime = time.time()
-                    
+
                     anomalies.append(self.createJSON(topic=[self.location, self.sensorName, self.measurementName], anomaly_status="Started", location=self.location, time_init=self.influxTimeStamp_start, time_duration="N/A"))
 
             else:
                 if self.thresholdBroken == True:
+                    if d:
+                        print("Loss of threshold")
                     self.thresholdBroken = False
+                    if d:
+                        print(f"Anomaly Ended {self.measurementName}")
                     self.influxTimeStamp_end = timestamp
                     self.anomalyEndTime = time.time()
                     anomalies.append(self.createJSON(topic=[self.location, self.sensorName, self.measurementName], anomaly_status="Ended", location=self.location, time_init=self.influxTimeStamp_start, time_duration=self.anomalyEndTime-self.anomalyDetectedTime))

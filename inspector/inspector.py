@@ -1,5 +1,5 @@
 import paho.mqtt.client as mqtt
-import datetime
+from datetime import datetime
 import time
 import math
 import json
@@ -25,7 +25,7 @@ db_username = 'root'
 db_password = 'root'
 database = 'testing'
 
-thresholdValue = [10]
+thresholdValue = [0]
 
 
 
@@ -34,10 +34,10 @@ def wait_for_influxdb(db_client):
     """Function to wait for the influxdb service to be available"""
     try:
         db_client.ping()
-        print("connected to db")
+        print(f"InfluxDBClient Connected | {datetime.now()}")
         return None
     except:
-        print("not yet")
+        print("InfluxDBClient Connection FAILED: Trying again (1s)")
         time.sleep(1)
         wait_for_influxdb(db_client)
 
@@ -68,7 +68,7 @@ def main():
 
     def on_connect(client, userdata, flags, rc):
         if rc==0:
-            print(f"Connected OK: {client}")
+            print(f"Connected to MQTT Broker | {datetime.now()}")
             client.subscribe(calculatorCommsTopic, 2)
         else:
             print(f"Bad Connection Returned (Code: {rc})")
@@ -76,63 +76,49 @@ def main():
 
     def on_publish(client, userdata, result):
         # Function for clients's specific callback when pubslishing message
-        print(f"Publish #{result} Complete")
+        print(f"Publish #{result} Complete | {datetime.now()}")
         pass
 
 
     def on_message(client, userdata, message):
         # Function for clients's specific callback when pubslishing message
+        initialTime = time.time()
         payload = message.payload.decode()
-        print("Message Received")
-        #print(payload)
-        #print()
-        try:
-            location, convertedDataIndexes = json.loads(payload)
-            #print("ConvertedDataIndexes: " + str(convertedDataIndexes))
-            for dataPackage in convertedDataIndexes:
-                #print(1)
-                #print(dataPackage)
+        print("----------Message Received----------")
+        print(datetime.now())
 
-                measurement = location + '_' + dataPackage['sensorName']
-                numberOfReadings = dataPackage['amountOfNewData']
+        location, convertedDataIndexes = json.loads(payload)
+        #print("ConvertedDataIndexes: " + str(convertedDataIndexes))
+        for dataPackage in convertedDataIndexes:
 
-                print(measurement)
+            measurement = location + '_' + dataPackage['sensorName']
+            numberOfReadings = dataPackage['amountOfNewData']
 
-                currentExaminer = None
-                #print(2)
+            currentExaminer = None
 
-                query_to_execute = f'select * from "{measurement}" group by * order by DESC limit {numberOfReadings}'
+            query_to_execute = f'select * from "{measurement}" group by * order by DESC limit {numberOfReadings}'
 
-                results = db_client.query(query_to_execute).raw['series']
-                data = results[0]['values']
+            results = db_client.query(query_to_execute).raw['series']
+            data = results[0]['values']
 
+            
 
-                print(str(data[0]) +" " + str(dataPackage['adc']) +" "+ str(dataPackage['channel']))
+            #print(str(data[0]) +" " + str(dataPackage['adc']) +" "+ str(dataPackage['channel']))
 
+            if measurement in DataExaminer.dataExaminers:
+                currentExaminer = DataExaminer.dataExaminersAccess[measurement]
+            else:
+                currentExaminer = DataExaminer(dataPackage['sensorName'], location, thresholdValue)
 
-                print("Queried")
+            anomalies = currentExaminer.examineData(data)
 
-                if measurement in DataExaminer.dataExaminers:
-                    #print("if1")
-                    currentExaminer = DataExaminer.dataExaminersAccess[measurement]
-                else:
-                    #print("if2")
-                    currentExaminer = DataExaminer(dataPackage['sensorName'], location, thresholdValue)
-                    #print("endif2")
-                #print("examiners")
+            if len(anomalies) > 0:
+                for anomaly in anomalies:
+                    client.publish("data/anomalyDetected", anomaly, qos=2)
+                    print(f"Sent Anomaly Data | {datetime.now()}")
 
-                anomalies = currentExaminer.examineData(data)
+        print(f"Finished Analyizing Batch of Data from ({location}) | {time.time()-initialTime}")
 
-                print("Examined")
-
-
-                if len(anomalies) > 0:
-                    for anomaly in anomalies:
-                        print(str(anomaly))
-                        client.publish("data/anomalyDetected", anomaly)
-        except Exception as e:
-            print(e)
-            raise FlowException("Process Exception", e)
 
     #Establish Connection to the MQTT Broker
     client, connection = connect_to_broker(client_id=client_id, host=HOST, port=PORT, keepalive=KEEPALIVE, on_connect=on_connect, on_message=on_message, on_publish=on_publish)
@@ -145,55 +131,6 @@ def main():
 
 
 
-def examineData(topic, location, dataFunction):
-    '''
-    Function (Coroutine) used to analyze data in realtime. It will
-    need to be modified once access to real data from a database is
-    impletemented.
-    '''
-
-    #Time in seconds from the beginning of the first call to this coroutine
-    initialTime = time.time()
-    #If the value of the data is greater than this value, an anomaly is detected
-    dataThreshold = 0
-    #Boolean variable to keep track of whether or not an anomaly has been detected
-    thresholdBroken = False
-    #Time in seconds when the anomaly is detected
-    detectedTime = 0
-    #Time stamp of the time when the anomaly is detected
-    detectedTimeStamp = ""
-    #Time in seconds when the data goes back within the normal value range (below dataThreshold)
-    endTime = 0
-
-
-    while True:
-        #Change in time from the beginning of this coroutine, to the current execution
-        dt = time.time()-initialTime
-        #Current Data Value
-        value = dataFunction(dt)
-
-        #If the current data value is greater than the threshold --> Anomaly detected
-        if value > dataThreshold:
-            #If the previous data was not an anomaly, than this is the beginning of the anomaly
-            if thresholdBroken == False:
-                thresholdBroken = True
-                detectedTime = time.time()
-                detectedTimeStamp = str(datetime.datetime.now().strftime("%m-%d-%y %H:%M:%S.%f"))
-                inspectorPackageJSON = createJSON(topic, "detected", location, detectedTimeStamp, 0)
-                yield inspectorPackageJSON
-                continue
-        #If the value of data is within normal range
-        else:
-            #If the previous data analyzed was part of an anomaly --> Anomaly over
-            if thresholdBroken == True:
-                thresholdBroken = False
-                endTime = time.time()
-                inspectorPackageJSON = createJSON(topic, "finished", location, detectedTimeStamp, endTime-detectedTime)
-                #yield the JSON package after the anomaly
-                yield inspectorPackageJSON
-                continue
-        #If there is no anomaly to report, yield None, and return to the loop
-        yield None
 
 
 
