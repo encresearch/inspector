@@ -7,7 +7,7 @@ This service is part of our [Earthquake Data Assimilation System](https://github
 ## API Overview
 `Inspector` interprets data and initiates an alert by sending `Notifier` a JSON object containing the anomaly detected in the data. More information on `Notifier` can be found here: https://github.com/encresearch/notifier
 
-`Inspector` connects to our MQTT Broker, and publishes data on anomalies that it detects for `Notifier` to relay to our subscribers. To detect these anomalies, each type of data has its own designated `examineData` Generator Object. This Coroutine runs in realtime for each data stream from each location, and detects the anomalies forming and ending. At both the beginning and end of a data anomaly, inspector publishes a JSON object in the following format to our MQTT broker.
+`Inspector` connects to our MQTT Broker, and publishes data on anomalies that it detects for `Notifier` to relay to our subscribers. To detect these anomalies, each sensor at each location has its own designated `DataExaminer` Object. This object updates in realtime for each data stream from each location, and detects the anomalies forming and ending. At both the beginning and end of a data anomaly, inspector publishes a JSON object in the following format to our MQTT broker.
 
 ~~~
 {
