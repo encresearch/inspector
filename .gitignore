@@ -1,14 +1,11 @@
 *.pyc
-*.csv
 __pycache__/
 .pytest_cache/
-.vscode/
 .cache
 .diff
-*.code-workspace
-.ipynb
-*.ipynb
 *.pickle
 .pickle
 *.obj
 *.txt
+env/
+venv

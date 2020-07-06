@@ -1,38 +1,36 @@
-import paho.mqtt.client as mqtt
-import datetime
 import time
 import math
 import json
-from influxdb import DataFrameClient
+import datetime
 
-#Declaring Global Variables
+import paho.mqtt.client as mqtt
+
 HOST = "iot.eclipse.org"
 PORT = 1883
 KEEPALIVE = 60
 
-#MQTT Topic to communicate with Notifier
-topic =  "data/anomalyDetected"
-#MQTT Client ID to remain unique
+topic = "data/anomalyDetected"
 client_id = "/Inspector"
 
+# Location array, for each location, the program will initialize dataExaminers
+# LOCATIONS = ["HAITI/SOUTH", "HAITI/NORTH", "USA/CA/SOUTH", "USA/CA/NORTH"]
+LOCATIONS = ["USA/Quincy/1"]
 
 
-#Test Data Reading Functions
+# Test Data Reading Functions
 def gas_sensor_test(timeSinceStart):
     """ Reads values > 0 every 5 seconds for an interval of 5 seconds"""
     return math.sin(2*math.pi*timeSinceStart/10)
+
 
 def current_sensor_test(timeSinceStart):
     """ Reads values > 0 every 10 seconds, starting at 5.7 seconds"""
     return math.sin((math.pi/10)*(timeSinceStart - 5.7))
 
+
 def magnetometer_sensor_test(timeSinceStart):
     """ Reads values > 0 every 5 seconds for an interval of 5 seconds"""
     return 10*((1/3)*math.sin(timeSinceStart/3) + 2*math.cos(timeSinceStart/3)*(math.sin(timeSinceStart/3)**2))
-
-#Location array, for each location, the program will initialize dataExaminers
-#LOCATIONS = ["HAITI/SOUTH", "HAITI/NORTH", "USA/CA/SOUTH", "USA/CA/NORTH"]
-LOCATIONS = ["USA/Quincy/1",]
 
 
 def createJSON(topic, anomaly_status, location, time_init, time_duration):

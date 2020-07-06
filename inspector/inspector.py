@@ -1,33 +1,30 @@
-import paho.mqtt.client as mqtt
-from datetime import datetime
+import os
 import time
-import math
 import json
+from datetime import datetime
+
+import paho.mqtt.client as mqtt
 from influxdb import InfluxDBClient
-from DataExaminer import DataExaminer
+from requests.exceptions import ConnectionError
 
+from inspector.data_examiner import DataExaminer
 
-#Declaring Global Variables
-HOST = "iot.eclipse.org"
-PORT = 1883
-KEEPALIVE = 60
+# INFLUX GLOBALS
+DB_HOST = os.getenv("DB_HOST", "influxdb")
+DB_PORT = int(os.getenv("DB_PORT", "8086"))
+DB_USERNAME = os.getenv("DB_USER", "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "root")
+DB_NAME = os.getenv("DB_NAME", "sensor_data")
 
-#MQTT Topic to communicate with Notifier
-topic =  "data/anomalyDetected"
-calculatorCommsTopic = "communication/influxdbConverted"
-#MQTT Client ID to remain unique
-client_id = "/Inspector"
+# BROKER GLOBALS
+BROKER_HOST = os.getenv("BROKER_HOST", "mqtt.eclipse.org")
+BROKER_PORT = int(os.getenv("BROKER_PORT", "1883"))
+BROKER_KEEPALIVE = int(os.getenv("BROKER_KEEPALIVE", "60"))
+BROKER_CLIENT_ID = os.getenv("MQTT_CLIENT_ID", "/Inspector")
+CALCULATOR_MQTT_TOPIC = "communication/influxdbConverted"
+NOTIFIER_MQTT_TOPIC = "data/anomalyDetected"
 
-
-db_host = 'localhost'#'influxdb' #'localhost'
-db_port = 8086
-db_username = 'root'
-db_password = 'root'
-database = 'testing'
-
-thresholdValue = [0]
-
-
+THRESHOLD_VALUE = [0]
 
 
 def wait_for_influxdb(db_client):
@@ -35,20 +32,22 @@ def wait_for_influxdb(db_client):
     try:
         db_client.ping()
         print(f"InfluxDBClient Connected | {datetime.now()}")
-        return None
-    except:
+    except ConnectionError:
         print("InfluxDBClient Connection FAILED: Trying again (1s)")
         time.sleep(1)
         wait_for_influxdb(db_client)
 
 
-
-
-
-
-def connect_to_broker(client_id, host, port, keepalive, on_connect, on_message, on_publish):
-    ''' Params -> Client(client_id=””, clean_session=True, userdata=None, protocol=MQTTv311, transport=”tcp”)
-    We set clean_session False, so in case connection is lost, it'll reconnect with same ID '''
+def connect_to_broker(
+    client_id,
+    host,
+    port,
+    keepalive,
+    on_connect,
+    on_message,
+    on_publish
+):
+    """Connect to our MQTT Broker."""
     client = mqtt.Client(client_id=client_id, clean_session=False)
     client.on_connect = on_connect
     client.on_message = on_message
@@ -58,83 +57,104 @@ def connect_to_broker(client_id, host, port, keepalive, on_connect, on_message, 
 
 
 def main():
-    ''' Main Function houses the main mqtt loop, where the dataExaminers look for
-    anomalies, and report them to notifier when a threshold is broken '''
+    """Main Function houses the main mqtt loop, where the dataExaminers look
+    for anomalies, and report them to notifier when a threshold is broken."""
 
-    db_client = InfluxDBClient(host=db_host, port=db_port, username=db_username, password=db_password, database=database)
-    # waits for influxdb service to be active
+    db_client = InfluxDBClient(
+        host=DB_HOST,
+        port=DB_PORT,
+        username=DB_USERNAME,
+        password=DB_PASSWORD,
+        database=DB_NAME
+    )
     wait_for_influxdb(db_client=db_client)
 
-
     def on_connect(client, userdata, flags, rc):
-        if rc==0:
+        """Function for clients's specific callback when connected to broker"""
+        if rc == 0:
             print(f"Connected to MQTT Broker | {datetime.now()}")
-            client.subscribe(calculatorCommsTopic, 2)
+            client.subscribe(CALCULATOR_MQTT_TOPIC, 2)
         else:
             print(f"Bad Connection Returned (Code: {rc})")
-        pass
 
     def on_publish(client, userdata, result):
-        # Function for clients's specific callback when pubslishing message
+        """Function for clients's specific callback when pubslishing message"""
         print(f"Publish #{result} Complete | {datetime.now()}")
-        pass
-
 
     def on_message(client, userdata, message):
-        # Function for clients's specific callback when pubslishing message
-        initialTime = time.time()
+        """Function for clients's specific callback when receiving message.
+
+        If an anomaly is detected, a message is published of the form:
+        {
+            "topic": [
+                "test_env/usa/quincy/1",
+                "Nitrogen Gas Sensor (MQ131)",
+                "test_env/usa/quincy/1_Nitrogen Gas Sensor (MQ131)"
+            ],
+            "anomaly_status": "Started",
+            "location": "test_env/usa/quincy/1",
+            "time_init": "2020-07-06T18:52:07.894296Z",
+            "time_duration": "N/A"
+        }
+        """
+        initial_time = time.time()
         payload = message.payload.decode()
         print("----------Message Received----------")
         print(datetime.now())
 
         location, convertedDataIndexes = json.loads(payload)
-        #print("ConvertedDataIndexes: " + str(convertedDataIndexes))
         for dataPackage in convertedDataIndexes:
 
             measurement = location + '_' + dataPackage['sensorName']
             numberOfReadings = dataPackage['amountOfNewData']
 
-            currentExaminer = None
+            current_examiner = None
 
-            query_to_execute = f'select * from "{measurement}" group by * order by DESC limit {numberOfReadings}'
-
+            query_to_execute = (
+               'select * from "{}" group by * order by DESC limit {}'.format(
+                   measurement,
+                   numberOfReadings
+                )
+            )
             results = db_client.query(query_to_execute).raw['series']
             data = results[0]['values']
 
-            
-
-            #print(str(data[0]) +" " + str(dataPackage['adc']) +" "+ str(dataPackage['channel']))
-
             if measurement in DataExaminer.dataExaminers:
-                currentExaminer = DataExaminer.dataExaminersAccess[measurement]
+                current_examiner = DataExaminer.dataExaminersAccess[
+                    measurement
+                ]
             else:
-                currentExaminer = DataExaminer(dataPackage['sensorName'], location, thresholdValue)
+                current_examiner = DataExaminer(
+                    dataPackage['sensorName'],
+                    location,
+                    THRESHOLD_VALUE
+                )
 
-            anomalies = currentExaminer.examineData(data)
+            anomalies = current_examiner.examineData(data)
 
             if len(anomalies) > 0:
                 for anomaly in anomalies:
-                    client.publish("data/anomalyDetected", anomaly, qos=2)
+                    client.publish(
+                        NOTIFIER_MQTT_TOPIC,
+                        anomaly,
+                        qos=2
+                    )
                     print(f"Sent Anomaly Data | {datetime.now()}")
+                    print(anomaly)
 
-        print(f"Finished Analyizing Batch of Data from ({location}) | {time.time()-initialTime}")
+        print("Finished Analyizing Batch of Data from ({}) | {}".format(
+            location,
+            time.time() - initial_time
+        ))
 
-
-    #Establish Connection to the MQTT Broker
-    client, connection = connect_to_broker(client_id=client_id, host=HOST, port=PORT, keepalive=KEEPALIVE, on_connect=on_connect, on_message=on_message, on_publish=on_publish)
-
-    #Begin the connection loop, where within the loop, messages can be sent
+    # Establish Connection with the MQTT Broker
+    client, connection = connect_to_broker(
+        client_id=BROKER_CLIENT_ID,
+        host=BROKER_HOST,
+        port=BROKER_PORT,
+        keepalive=BROKER_KEEPALIVE,
+        on_connect=on_connect,
+        on_message=on_message,
+        on_publish=on_publish
+    )
     client.loop_forever()
-    #client.disconnect()
-
-
-
-
-
-
-
-
-
-
-if __name__ == '__main__':
-    main()
